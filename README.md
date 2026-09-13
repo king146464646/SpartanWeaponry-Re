@@ -13,6 +13,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Mai-xiyu/SpartanWeaponry-NeoForge?style=for-the-badge" alt="License"></a>
 </p>
 
+**This project restores the official 1.20.1 feature values and fixes bugs based on the original port**
+
 An unofficial NeoForge 1.21.1 port of **Spartan Weaponry**. The mod keeps the
 original "Weapons Galore" idea: a broad set of melee, ranged, and throwing
 weapons inspired by historical and fantasy weaponry.

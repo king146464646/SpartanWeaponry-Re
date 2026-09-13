@@ -335,6 +335,8 @@ public class SwordBaseItem extends SwordItem
                 WeaponTraitResolver.getEnchantmentCompatibility(this.traits, enchantment);
         if (traitCompatibility.isPresent()) return traitCompatibility.get();
         if (enchantment.is(Enchantments.SWEEPING_EDGE)) return false;
+        if (this.archetype == WeaponArchetype.DAGGER && enchantment.is(Enchantments.LOYALTY))
+            return true;
         return stack.is(Items.ENCHANTED_BOOK) || enchantment.value().isSupportedItem(stack);
     }
 
@@ -344,6 +346,8 @@ public class SwordBaseItem extends SwordItem
                 WeaponTraitResolver.getEnchantmentCompatibility(this.traits, enchantment);
         if (traitCompatibility.isPresent()) return traitCompatibility.get();
         if (enchantment.is(Enchantments.SWEEPING_EDGE)) return false;
+        if (this.archetype == WeaponArchetype.DAGGER && enchantment.is(Enchantments.LOYALTY))
+            return true;
         Optional<HolderSet<Item>> primaryItems = enchantment.value().definition().primaryItems();
         return this.supportsEnchantment(stack, enchantment)
                 && (primaryItems.isEmpty() || stack.is(primaryItems.get()));
