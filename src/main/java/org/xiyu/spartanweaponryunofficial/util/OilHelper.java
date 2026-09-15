@@ -55,6 +55,7 @@ public class OilHelper {
     }
 
     public static boolean isValidPotion(Potion potionIn) {
+        if (potionIn == null) return false;
         boolean isValidPotion = true;
         if (potionIn.getEffects().isEmpty()
                 || Config.INSTANCE
