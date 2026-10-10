@@ -44,6 +44,7 @@ import org.xiyu.spartanweaponryunofficial.entity.projectile.ThrowingWeaponEntity
 import org.xiyu.spartanweaponryunofficial.init.ModEnchantments;
 import org.xiyu.spartanweaponryunofficial.init.ModEntities;
 import org.xiyu.spartanweaponryunofficial.init.ModSounds;
+import org.xiyu.spartanweaponryunofficial.util.ItemStackDataHelper;
 import org.xiyu.spartanweaponryunofficial.util.WeaponArchetype;
 
 public class ThrowingWeaponItem extends Item
@@ -54,6 +55,7 @@ public class ThrowingWeaponItem extends Item
     public static final String NBT_UUID = "UUID";
     public static final String NBT_ORIGINAL = "Original";
     public static final String NBT_RECOVERED = "Recovered";
+    public static final String NBT_PENDING_WEAR = "PendingWear";
 
     protected float attackDamage = 1.0f;
     protected double attackSpeed = 0.0D;
@@ -414,9 +416,21 @@ public class ThrowingWeaponItem extends Item
                     thrown.pickup = AbstractArrow.Pickup.ALLOWED;
                     // Use ammo system - increment ammo used counter
                     ThrowingWeaponStackState.incrementAmmoUsed(stack);
+                    if (!ThrowingWeaponStackState.hasAmmoRemaining(
+                            stack, this.getMaxAmmo(stack, levelIn))) {
+                        int wear = stack.getDamageValue();
+                        if (wear > 0) {
+                            ItemStackDataHelper.updateTag(
+                                    stack,
+                                    tag ->
+                                            tag.putInt(
+                                                    NBT_PENDING_WEAR,
+                                                    tag.getInt(NBT_PENDING_WEAR) + wear));
+                            stack.setDamageValue(0);
+                        }
+                    }
                 }
 
-                stack.setDamageValue(0);
                 levelIn.playSound(
                         null,
                         player.getX(),

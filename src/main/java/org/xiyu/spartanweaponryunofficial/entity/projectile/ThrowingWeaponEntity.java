@@ -123,14 +123,18 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
 
         // Only process return logic if the weapon has Loyalty enchantment
         if (returnLevel > 0 && thrower != null) {
+            boolean selfManaged = this.hasSelfManagedReturn();
+            boolean wantsReturn =
+                    this.isReturning
+                            || (!selfManaged && (this.inGroundTime > 4 || this.hasDealtDamage()));
             // Check if we should start returning (after being in ground for a short time, or
             // already returning)
-            if (this.inGroundTime > 4 || this.hasDealtDamage() || this.isReturning) {
+            if (wantsReturn) {
                 if (thrower.isAlive()
                         && (!(thrower instanceof ServerPlayer) || !thrower.isSpectator())) {
                     // Return to thrower - ensure we're in the returning state
                     if (!this.isReturning) {
-                        this.setNoPhysics(true);
+                        if (!selfManaged) this.setNoPhysics(true);
                         this.inGround = false;
                         this.isReturning = true;
                         this.setNoGravity(true);
@@ -139,27 +143,30 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
                     // Keep forcing these states while returning to prevent position conflicts
                     if (this.isReturning) {
                         if (this.inGround) this.inGround = false;
-                        if (!this.isNoPhysics()) this.setNoPhysics(true);
+                        if (!selfManaged && !this.isNoPhysics()) this.setNoPhysics(true);
                     }
 
-                    Vec3 distance = thrower.getEyePosition().subtract(this.position());
-                    this.setPosRaw(
-                            this.getX(),
-                            this.getY() + distance.y * 0.015 * (double) returnLevel,
-                            this.getZ());
-                    if (level.isClientSide) {
-                        this.yOld = this.getY();
-                    }
+                    if (!selfManaged) {
+                        Vec3 distance = thrower.getEyePosition().subtract(this.position());
+                        this.setPosRaw(
+                                this.getX(),
+                                this.getY() + distance.y * 0.015 * (double) returnLevel,
+                                this.getZ());
+                        if (level.isClientSide) {
+                            this.yOld = this.getY();
+                        }
 
-                    double velocity = 0.10d * (double) returnLevel;
-                    this.setDeltaMovement(
-                            this.getDeltaMovement()
-                                    .scale(0.95d)
-                                    .add(distance.normalize().scale(velocity)));
+                        double velocity = 0.10d * (double) returnLevel;
+                        this.setDeltaMovement(
+                                this.getDeltaMovement()
+                                        .scale(0.95d)
+                                        .add(distance.normalize().scale(velocity)));
 
-                    if (!this.playedReturnSound) {
-                        this.playSound(ModSounds.THROWING_WEAPON_LOYALTY_RETURN.get(), 10.0F, 1.0F);
-                        this.playedReturnSound = true;
+                        if (!this.playedReturnSound) {
+                            this.playSound(
+                                    ModSounds.THROWING_WEAPON_LOYALTY_RETURN.get(), 10.0F, 1.0F);
+                            this.playedReturnSound = true;
+                        }
                     }
                 } else if (!thrower.isAlive() || thrower.isSpectator()) {
                     // Thrower is dead or spectating - stop returning and drop naturally
@@ -335,9 +342,9 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
             this.ticksInAir = 0;
 
             if (!level.isClientSide && this.getDeltaMovement().lengthSqr() < 1.0e-7d) {
-                if (this.getEntityData().get(DATA_RETURN) > 0 && !this.isNoPhysics())
-                    this.setNoPhysics(true);
-                else if (this.pickup == Pickup.ALLOWED) {
+                if (this.getEntityData().get(DATA_RETURN) > 0 && !this.isNoPhysics()) {
+                    if (!this.hasSelfManagedReturn()) this.setNoPhysics(true);
+                } else if (this.pickup == Pickup.ALLOWED) {
                     this.dropAsItem();
                     this.discard();
                 }
@@ -494,6 +501,7 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
 
     public void setWeapon(ItemStack weaponStack) {
         ItemStack stack = weaponStack.copy();
+        stack.setDamageValue(0);
         ItemStackDataHelper.updateTag(
                 stack,
                 tag -> {
@@ -509,6 +517,10 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
                 ModEnchantments.getLevel(
                         this.level().registryAccess(), Enchantments.LOYALTY, stack);
         this.getEntityData().set(DATA_RETURN, (byte) loyalty);
+    }
+
+    protected boolean hasSelfManagedReturn() {
+        return false;
     }
 
     protected boolean canBeCaughtInMidair(Entity shooter, Entity entityHit) {
@@ -594,7 +606,9 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
                                 .getInt(ThrowingWeaponItem.NBT_AMMO_USED);
         if (currentAmmo >= maxAmmo) return;
 
-        int itemDamage = targetStack.getDamageValue() + pickupStack.getDamageValue();
+        CompoundTag targetTag = ItemStackDataHelper.getTag(targetStack);
+        int pendingWear = targetTag.getInt(ThrowingWeaponItem.NBT_PENDING_WEAR);
+        int itemDamage = targetStack.getDamageValue() + pendingWear + pickupStack.getDamageValue();
         if (itemDamage > targetStack.getMaxDamage()) {
             itemDamage -= targetStack.getMaxDamage() + 1;
         } else {
@@ -605,6 +619,8 @@ public class ThrowingWeaponEntity extends AbstractArrow implements IEntityWithCo
                                     ThrowingWeaponItem.NBT_AMMO_USED,
                                     Math.max(0, tag.getInt(ThrowingWeaponItem.NBT_AMMO_USED) - 1)));
         }
+        ItemStackDataHelper.updateTag(
+                targetStack, tag -> tag.remove(ThrowingWeaponItem.NBT_PENDING_WEAR));
         targetStack.setDamageValue(Mth.clamp(itemDamage, 0, targetStack.getMaxDamage()));
     }
 

@@ -1,6 +1,8 @@
 package org.xiyu.spartanweaponryunofficial.entity.projectile;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
@@ -59,6 +61,15 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
 
     protected int caughtItems = 0;
     protected boolean hasBounced = false;
+
+    protected final Set<Integer> hitEntities = new HashSet<>();
+
+    protected static final int MAX_BOUNCED_BURST = 8;
+    protected int bouncedBurst = 0;
+
+    protected static final int STUCK_IN_BLOCK_TICKS = 10;
+    protected int stuckInBlockTicks = 0;
+
     protected static final Predicate<Entity> ITEMS_AND_XP =
             EntitySelector.NO_SPECTATORS.and(
                     (entity) ->
@@ -141,6 +152,12 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
         Level level = this.level();
         Entity owner = this.getOwner();
 
+        if (!level.isClientSide && this.tickCount > 200) {
+            if (this.pickup == AbstractArrow.Pickup.ALLOWED) this.dropAsItem();
+            this.discard();
+            return;
+        }
+
         // Check for spectator BEFORE calling super.tick() to prevent parent class from interfering
         if (!level.isClientSide && owner != null && owner.isSpectator()) {
             // Owner is spectating - stop all returning behavior and let it drop
@@ -150,6 +167,16 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
         }
 
         super.tick();
+
+        if (this.bouncedBurst > 0) --this.bouncedBurst;
+
+        if (!level.isClientSide && this.isInsideSolidBlock(level)) {
+            if (++this.stuckInBlockTicks >= STUCK_IN_BLOCK_TICKS) {
+                this.dropAsItem();
+                this.discard();
+                return;
+            }
+        } else this.stuckInBlockTicks = 0;
 
         // Do nothing more if the Boomerang is in the ground
         if (this.inGround) {
@@ -204,23 +231,26 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
             if (this.isBoomerangReturning() && this.returnPos != null) {
                 Vec3 distanceVec = this.position().subtract(this.returnPos);
                 double length = distanceVec.length();
+                int loyalty = this.getEntityData().get(DATA_RETURN);
+                boolean flyingBack = this.getDeltaMovement().dot(distanceVec.scale(-1.0d)) > 0.0d;
 
                 // Fly towards the player when close enough.
-                if (length < 5.0d)
+                if (length < 5.0d) {
+                    double speed = 1.0d + 0.15d * (double) loyalty;
                     this.setDeltaMovement(
-                            -distanceVec.x / length,
-                            -distanceVec.y / length,
-                            -distanceVec.z / length);
-                //                if(length < 1.0d && getOwner() instanceof Player)
-                //                        attemptCatch((Player)getOwner());
-                // Otherwise, just fly in reverse as normal
-                else {
+                            -distanceVec.x / length * speed,
+                            -distanceVec.y / length * speed,
+                            -distanceVec.z / length * speed);
+                } else {
+                    double acceleration =
+                            this.ACCELERATION
+                                    * (flyingBack ? 1.0d + 0.5d * (double) loyalty : 1.0d);
                     Vec3 motion =
                             this.getDeltaMovement()
                                     .add(
-                                            -this.ACCELERATION * (distanceVec.x / length),
-                                            -this.ACCELERATION * (distanceVec.y / length),
-                                            -this.ACCELERATION * (distanceVec.z / length));
+                                            -acceleration * (distanceVec.x / length),
+                                            -acceleration * (distanceVec.y / length),
+                                            -acceleration * (distanceVec.z / length));
                     this.setDeltaMovement(motion);
                 }
             }
@@ -260,18 +290,18 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
 
             --this.ticksUntilSound;
         }
-        if (!level.isClientSide && this.tickCount > 200) {
-            if (this.getEntityData().get(DATA_RETURN) > 0 && !this.isNoPhysics())
-                this.setNoPhysics(true);
-            else if (this.pickup == AbstractArrow.Pickup.ALLOWED) {
-                this.dropAsItem();
-                this.discard();
-            }
-        }
         if (level.isClientSide && !this.inGround) {
             level.addParticle(
                     ParticleTypes.CRIT, this.getX(), this.getY(), this.getZ(), 0.0D, 0.0D, 0.0D);
         }
+    }
+
+    private boolean isInsideSolidBlock(Level level) {
+        BlockPos pos =
+                BlockPos.containing(
+                        this.getX(), this.getY() + this.getBbHeight() * 0.5d, this.getZ());
+        BlockState state = level.getBlockState(pos);
+        return state.isSuffocating(level, pos);
     }
 
     @Override
@@ -315,6 +345,15 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
             this.setDeltaMovement(reflectVec.scale(-0.75d));
             this.hasBounced = true;
 
+            this.bouncedBurst += 2;
+            if (this.bouncedBurst >= MAX_BOUNCED_BURST) {
+                if (!level.isClientSide) {
+                    this.dropAsItem();
+                    this.discard();
+                }
+                return;
+            }
+
             this.playSound(
                     this.getBounceSound(), 1.0f, 2.2f / this.random.nextFloat() * 0.2f + 0.9f);
 
@@ -323,11 +362,24 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
         } else super.onHitBlock(hitResult);
     }
 
+    @Override
+    protected boolean canHitEntity(Entity entity) {
+        if (this.isBoomerangReturning()) {
+            Entity owner = this.getOwner();
+            if (owner != null && entity.is(owner)) return super.canHitEntity(entity);
+            if (this.hitEntities.contains(entity.getId())) return false;
+            return entity.canBeHitByProjectile();
+        }
+        return super.canHitEntity(entity);
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     protected void onHitEntity(EntityHitResult hitResult) {
         boolean wasReturning = this.isBoomerangReturning();
         super.onHitEntity(hitResult);
+
+        this.hitEntities.add(hitResult.getEntity().getId());
 
         Entity entity = hitResult.getEntity();
         if (entity instanceof LivingEntity livingEntity && livingEntity.isDeadOrDying()) {
@@ -404,6 +456,11 @@ public class BoomerangEntity extends ThrowingWeaponEntity {
     protected boolean canBeCaughtInMidair(Entity shooter, Entity entityHit) {
         // Only the shooter can catch the Boomerang
         return shooter.is(entityHit);
+    }
+
+    @Override
+    protected boolean hasSelfManagedReturn() {
+        return true;
     }
 
     @Override
