@@ -170,9 +170,9 @@ public class HeavyCrossbowItem extends CrossbowItem
                 // Create a copy of the bolt, then save it to NBT.
                 ItemStack boltToStore = bolt.copy();
                 boltToStore.setCount(count);
-                CompoundTag nbtProjectile =
+                CompoundTag nbtBolt =
                         (CompoundTag)
-                                projectileToStore.save(levelIn.registryAccess(), new CompoundTag());
+                                boltToStore.save(levelIn.registryAccess(), new CompoundTag());
                 ItemStackDataHelper.updateTag(stack, tag -> tag.put(NBT_PROJECTILE, nbtBolt));
 
                 if (!player.getAbilities().instabuild) {
